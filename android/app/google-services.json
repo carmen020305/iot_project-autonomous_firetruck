@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "707162221843",
+    "project_id": "carmen-6a07c",
+    "storage_bucket": "carmen-6a07c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:707162221843:android:4b6600bfaa877f3f007ee6",
+        "android_client_info": {
+          "package_name": "com.example.flutter_application_1"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDgHq6kGsUcTOqJ-cqFa-35R7LUJrMvESc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
