@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
 import 'control_page.dart';
 
@@ -25,31 +26,51 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  final TextEditingController emailController = TextEditingController();
+  final TextEditingController identifierController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
   Future<void> logIn() async {
-    try {
-      await FirebaseAuth.instance.signInWithEmailAndPassword(
-        email: emailController.text.trim(),
-        password: passwordController.text,
-      );
-      if (!mounted) return;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (context) => const ControlPage()),
-      );
-    } on FirebaseAuthException catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Log in failed')),
-      );
+  final String identifier = identifierController.text.trim();
+  String email = identifier;
+
+  try {
+    if (!identifier.contains('@')) {
+      final DocumentSnapshot usernameDoc = await FirebaseFirestore.instance
+          .collection('usernames')
+          .doc(identifier.toLowerCase())
+          .get();
+      if (!usernameDoc.exists) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('User not found')),
+        );
+        return;
+      }
+      final Map<String, dynamic> usernameData =
+          usernameDoc.data() as Map<String, dynamic>;
+      email = usernameData['email'].toString();
     }
+
+    await FirebaseAuth.instance.signInWithEmailAndPassword(
+      email: email,
+      password: passwordController.text,
+    );
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => const ControlPage()),
+    );
+  } on FirebaseAuthException catch (e) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(e.message ?? 'Log in failed')),
+    );
   }
+}
 
   @override
   void dispose() {
-    emailController.dispose();
+    identifierController.dispose();
     passwordController.dispose();
     super.dispose();
   }
@@ -66,11 +87,10 @@ class _LoginPageState extends State<LoginPage> {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
                 child: TextField(
-                  controller: emailController,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: identifierController,
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
-                    labelText: 'Email',
+                    labelText: 'Username or email',
                   ),
                 ),
               ),
@@ -128,14 +148,63 @@ class RegistrationPage extends StatefulWidget {
 
 class _RegistrationPageState extends State<RegistrationPage> {
   final TextEditingController emailController = TextEditingController();
+  final TextEditingController usernameController = TextEditingController();
   final TextEditingController passwordController = TextEditingController();
 
+  void showMessage(String text) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(text)),
+    );
+  }
+
   Future<void> register() async {
+    final String email = emailController.text.trim();
+    final String username = usernameController.text.trim().toLowerCase();
+    final RegExp usernamePattern = RegExp(r'^[a-z0-9_]{3,20}$');
+
+    if (!usernamePattern.hasMatch(username)) {
+      showMessage('Username must have 3 to 20 letters, numbers or underscores');
+      return;
+    }
+
     try {
-      await FirebaseAuth.instance.createUserWithEmailAndPassword(
-        email: emailController.text.trim(),
+      final DocumentSnapshot existing = await FirebaseFirestore.instance
+          .collection('usernames')
+          .doc(username)
+          .get();
+      if (existing.exists) {
+        if (!mounted) return;
+        showMessage('Username already taken');
+        return;
+      }
+
+      final UserCredential credential =
+          await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
         password: passwordController.text,
       );
+      final String uid = credential.user!.uid;
+
+      try {
+        final WriteBatch batch = FirebaseFirestore.instance.batch();
+        batch.set(FirebaseFirestore.instance.collection('users').doc(uid), {
+          'email': email,
+          'username': username,
+          'role': 'viewer',
+        });
+        batch.set(
+            FirebaseFirestore.instance.collection('usernames').doc(username), {
+          'email': email,
+          'uid': uid,
+        });
+        await batch.commit();
+      } catch (e) {
+        await credential.user!.delete();
+        if (!mounted) return;
+        showMessage('Registration failed, try another username');
+        return;
+      }
+
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -143,15 +212,14 @@ class _RegistrationPageState extends State<RegistrationPage> {
       );
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.message ?? 'Registration failed')),
-      );
+      showMessage(e.message ?? 'Registration failed');
     }
   }
 
   @override
   void dispose() {
     emailController.dispose();
+    usernameController.dispose();
     passwordController.dispose();
     super.dispose();
   }
@@ -173,6 +241,16 @@ class _RegistrationPageState extends State<RegistrationPage> {
                   decoration: const InputDecoration(
                     border: OutlineInputBorder(),
                     labelText: 'Email',
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 30, vertical: 10),
+                child: TextField(
+                  controller: usernameController,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    labelText: 'Username',
                   ),
                 ),
               ),
